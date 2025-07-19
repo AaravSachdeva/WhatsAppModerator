@@ -14,7 +14,7 @@ async function startSock() {
 
     const sock = makeWASocket({
         auth: state,
-        browser: Browsers.macOS("Google Chrome"),
+        // browser: Browsers.macOS("Google Chrome"),
         printQRInTerminal: true,
     });
 
