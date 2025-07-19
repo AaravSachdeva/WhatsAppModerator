@@ -1,20 +1,17 @@
 // index.ts or auth.ts
-import makeWASocket, { useMultiFileAuthState, DisconnectReason, Browsers } from 'baileys';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore } from 'baileys';
 import QRCode from 'qrcode'
-
-const getCreds = async () => {
-    const { saveCreds, state } = await useMultiFileAuthState('./auth_info');
-    return { saveCreds, state }
-}
+// import P from 'pino'
+import { Boom } from '@hapi/boom'
 
 async function startSock() {
 
-    const { saveCreds, state } = await getCreds();
+    const { saveCreds, state } = await useMultiFileAuthState('./auth_info');
 
 
     const sock = makeWASocket({
         auth: state,
-        // browser: Browsers.macOS("Google Chrome"),
+        // markOnlineOnConnect: true,
         printQRInTerminal: true,
     });
 
@@ -26,7 +23,14 @@ async function startSock() {
             // as an example, this prints the qr code to the terminal
             console.log(await QRCode.toString(qr, { type: 'terminal' }))
         }
+        if (connection === "close") {
+            const shouldReconnect = (lastDisconnect?.error as Boom).output.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) {
+                startSock()
+            }
+        }
     })
+
 }
 
 startSock();
