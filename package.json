@@ -1,12 +1,19 @@
 {
+  "name": "whatsapp-bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts" // For development, run directly with ts-node
+    "dev": "ts-node src/index.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.15",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "baileys": "^6.7.16"
   }
 }
