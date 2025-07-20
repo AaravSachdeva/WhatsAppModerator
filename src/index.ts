@@ -1,8 +1,6 @@
-// index.ts or auth.ts
 import { makeWASocket, useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore, GroupMetadata } from 'baileys';
 import QRCode from 'qrcode'
 import NodeCache from 'node-cache'
-// import P from 'pino'
 import { Boom } from '@hapi/boom'
 import { groupActionCheck, langDetector, randomTimer } from './helpers.js';
 import dotenv from 'dotenv';
@@ -63,13 +61,9 @@ async function startSock() {
     sock.ev.on('messages.upsert', async ({ messages }) => {
 
         const msg = messages[0];
-
-        // Check if message is from a group
         const isGroup = msg.key.remoteJid === groupId;
         if (isGroup) {
-            // Ignore status updates or system messages
-            if (!msg.message) return;
-            // || msg.key.fromMe
+            if (!msg.message || msg.key.fromMe) return;
             const groupId = msg.key.remoteJid!;
             const senderId = msg.key.participant!;
             const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
@@ -82,7 +76,6 @@ async function startSock() {
                 }, randomTimer())
 
             }
-            // Optionally: reply or react
         }
     });
 }
