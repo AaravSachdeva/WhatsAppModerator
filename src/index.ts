@@ -1,36 +1,29 @@
 // index.ts or auth.ts
-import makeWASocket, { useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore, GroupMetadata } from 'baileys';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore, GroupMetadata } from 'baileys';
 import QRCode from 'qrcode'
+import NodeCache from 'node-cache'
 // import P from 'pino'
 import { Boom } from '@hapi/boom'
+import { groupActionCheck, langDetector, randomTimer } from './helpers.js';
+import dotenv from 'dotenv';
+dotenv.config();
 
-const groupId = "120363420386820501@g.us";
+const groupId = process.env.GROUP_ID;
 
-const groupActionCheck = (action: string, participant: string) => {
-    if (action === "add") {
-        return `hello ${participant}`
-    }
-    else if (action === "remove") {
-        return `${participant} has been ${action}d`
-    }
-    else if (action === "promote") {
-        return `${participant} has been ${action}d`
-    }
-    else if (action === "demote") {
-        return `${participant} has been ${action}d`
-    }
-    return ""
-}
+
 
 async function startSock() {
 
     const { saveCreds, state } = await useMultiFileAuthState('./auth_info');
-
+    const groupCache = new NodeCache({ stdTTL: 5 * 60, useClones: false })
 
     const sock = makeWASocket({
         auth: state,
         // markOnlineOnConnect: true,
+        cachedGroupMetadata: async (jid) => groupCache.get(jid),
         printQRInTerminal: true,
+        syncFullHistory: false,
+        shouldSyncHistoryMessage: () => false,
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -49,23 +42,50 @@ async function startSock() {
         }
     })
     sock.ev.on("group-participants.update", async (request) => {
-        const { action, author, id, participants } = request;
+        const { action, id, participants } = request;
+
+        const metadata = await sock.groupMetadata(id);
+        groupCache.set(id, metadata);
 
         if (id === groupId) {
-            participants.forEach(async (participant) => {
-                await sock.sendMessage(
-                    groupId,
-                    {
-                        text: groupActionCheck(action, participant),
-                        // mentions: ['12345678901@s.whatsapp.net']
-                    }
-                )
-            })
-
+            for (const participant of participants) {
+                const message = groupActionCheck(action, participant);
+                setTimeout(async () => {
+                    await sock.sendMessage(groupId, {
+                        text: message,
+                        mentions: [participant]
+                    });
+                }, randomTimer())
+            }
         }
+    });
 
-    })
+    sock.ev.on('messages.upsert', async ({ messages }) => {
 
+        const msg = messages[0];
+
+        // Check if message is from a group
+        const isGroup = msg.key.remoteJid === groupId;
+        if (isGroup) {
+            // Ignore status updates or system messages
+            if (!msg.message) return;
+            // || msg.key.fromMe
+            const groupId = msg.key.remoteJid!;
+            const senderId = msg.key.participant!;
+            const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+
+            const language = await langDetector(text);
+
+            if (language !== "en") {
+                setTimeout(async () => {
+                    await sock.sendMessage(groupId, { text: `@${senderId.split('@')[0]}, As part of the requirement of the group, you are required to speak english only`, mentions: [senderId] });
+                }, randomTimer())
+
+            }
+            // Optionally: reply or react
+        }
+    });
 }
 
 startSock();
+
