@@ -36,6 +36,6 @@ export const groupActionCheck = (action: string, participant: string) => {
 }
 
 export const randomTimer = () => {
-    const time = Math.ceil(Math.random() * 10)
+    const time = Math.ceil(Math.random() * 3)
     return time * 1000
 }
