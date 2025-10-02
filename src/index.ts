@@ -10,6 +10,7 @@ import { Boom } from "@hapi/boom";
 import { groupActionCheck, langDetector, randomTimer } from "./helpers.js";
 import dotenv from "dotenv";
 import chalk from "chalk";
+import pino from "pino";
 
 dotenv.config();
 
@@ -21,12 +22,9 @@ async function startSock() {
 
 	const sock = makeWASocket({
 		auth: state,
-		// markOnlineOnConnect: true,
 		cachedGroupMetadata: async (jid) => groupCache.get(jid),
-		// printQRInTerminal: true,
-
-		syncFullHistory: false,
-		shouldSyncHistoryMessage: () => false,
+		// Set to "info" for detailed logs, or "silent" for clean output
+		logger: pino({ level: "silent" }),
 	});
 
 	sock.ev.on("creds.update", saveCreds);
@@ -77,23 +75,38 @@ async function startSock() {
 	sock.ev.on("messages.upsert", async ({ messages }) => {
 		const msg = messages[0];
 		if (!msg.message || msg.key.fromMe) return;
+
 		const remoteJid = msg.key.remoteJid!;
 		const senderId = msg.key.participant || msg.key.remoteJid!;
 		const isGroup = remoteJid === groupId;
+
 		if (isGroup) {
 			const text =
 				msg.message?.conversation ||
 				msg.message?.extendedTextMessage?.text ||
 				"";
 
-			console.log(chalk.cyan(`[Message] ${senderId}: ${text}`));
+			if (!text) return;
+
+			// 1. Console log the message
+			console.log(
+				chalk.cyan(`[Message] From ${senderId.split("@")[0]}: ${text}`)
+			);
 
 			const language = await langDetector(text);
 
+			// 2. Log if it is not in English or not
 			if (language !== "en") {
+				console.log(
+					chalk.yellow(
+						`[Language Check] Detected language: ${language}. NOT ENGLISH.`
+					)
+				);
+
+				// 3. Send a message
 				setTimeout(async () => {
 					console.log(
-						chalk.red(`[Language] Non-English detected from ${senderId}`)
+						chalk.red(`--> Sending warning to ${senderId.split("@")[0]}`)
 					);
 					await sock.sendMessage(groupId, {
 						text: `@${
@@ -102,6 +115,12 @@ async function startSock() {
 						mentions: [senderId],
 					});
 				}, randomTimer());
+			} else {
+				console.log(
+					chalk.green(
+						`[Language Check] Detected language: ${language}. IS ENGLISH.`
+					)
+				);
 			}
 		}
 	});
