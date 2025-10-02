@@ -30,7 +30,7 @@ async function startSock() {
         const { connection, lastDisconnect, qr } = update
         if (qr) {
             // as an example, this prints the qr code to the terminal
-            console.log(await QRCode.toString(qr, { type: 'terminal' }))
+            console.log(await QRCode.toString(qr, { type: 'terminal', small: true}))
         }
         if (connection === "close") {
             const shouldReconnect = (lastDisconnect?.error as Boom).output.statusCode !== DisconnectReason.loggedOut;
