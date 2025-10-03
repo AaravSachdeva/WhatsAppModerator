@@ -38,6 +38,10 @@ async function startSock() {
 		if (connection) {
 			console.log(chalk.blueBright(`[WA] Connection status: ${connection}`));
 		}
+		if (connection === "open") {
+			// Start polling every 5 seconds
+			pollGroupParticipants(sock, groupId as string);
+		}	
 		if (connection === "close") {
 			const shouldReconnect =
 				(lastDisconnect?.error as Boom).output.statusCode !==
@@ -124,6 +128,23 @@ async function startSock() {
 			}
 		}
 	});
+}
+
+// Add this function inside or outside startSock as needed
+async function pollGroupParticipants(
+	sock: ReturnType<typeof makeWASocket>,
+	groupId: string
+) {
+	while (true) {
+		try {
+			const response = await sock.groupRequestParticipantsList(groupId);
+			console.log(chalk.yellowBright(`[Poll] groupRequestParticipantsList output:`));
+			console.log(chalk.yellowBright(JSON.stringify(response, null, 2)));
+		} catch (err) {
+			console.error(chalk.red("[Poll] Failed to fetch group participants list:"), err);
+		}
+		await new Promise((res) => setTimeout(res, 5000)); // wait 5 seconds
+	}
 }
 
 startSock();
