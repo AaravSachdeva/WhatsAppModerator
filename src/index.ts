@@ -62,16 +62,26 @@ async function startSock() {
 		const metadata = await sock.groupMetadata(id);
 		groupCache.set(id, metadata);
 
+		// Messaging for join/leave events
 		if (id === groupId) {
 			for (const participant of participants) {
-				const message = groupActionCheck(action, participant);
-				setTimeout(async () => {
-					console.log(chalk.magenta(`[Group] ${action} - ${participant}`));
-					await sock.sendMessage(groupId, {
-						text: message,
-						mentions: [participant],
-					});
-				}, randomTimer());
+				if (action === "add") {
+					// User joined (via add)
+					setTimeout(async () => {
+						await sock.sendMessage(participant, {
+							text: "Hey! I saw your request to join the group. Could you please share a brief introduction about yourself?"
+						});
+						console.log(chalk.green(`[JoinRequest] Sent intro message to ${participant}`));
+					}, randomTimer());
+				} else if (action === "remove") {
+					// User left (via remove)
+					setTimeout(async () => {
+						await sock.sendMessage(participant, {
+							text: "Hey I noticed you left the group Just wanted to check if there's any feedback you’d like to share"
+						});
+						console.log(chalk.green(`[Leave] Sent feedback message to ${participant}`));
+					}, randomTimer());
+				}
 			}
 		}
 	});
@@ -143,55 +153,20 @@ async function pollGroupParticipants(
 			request_time: string;
 			phone_number: string;
 			messageSent: boolean;
-			accepted: boolean;
+			status: "pending" | "approved" | "rejected";
 		};
 		const joinRequestCache = new NodeCache({ stdTTL: 60 * 60 * 48, checkperiod: 60 }); // 48 hours TTL
+		const configuredExpiryMs = Number(process.env.JOIN_REQUEST_TIMEOUT_MS);
+		const joinRequestExpiryMs = Number.isFinite(configuredExpiryMs) && configuredExpiryMs > 0
+			? configuredExpiryMs
+			: 48 * 60 * 60 * 1000;
+		console.log(
+			chalk.yellow(
+				`[JoinRequest] Auto-reject timeout set to ${(joinRequestExpiryMs / (60 * 60 * 1000)).toFixed(2)} hours`
+			)
+		);
 
-		// Helper to approve join request
-		async function approveJoinRequest(groupJid: string, phoneNumbers: string[]) {
-			try {
-				const response = await sock.groupRequestParticipantsUpdate(
-					groupJid,
-					phoneNumbers,
-					'approve'
-				);
-				console.log(chalk.green(`[Approve] Approved join request for ${phoneNumbers.join(', ')} in ${groupJid}`));
-				console.log(response);
-			} catch (err) {
-				console.error(chalk.red(`[Approve] Failed to approve join request for ${phoneNumbers.join(', ')} in ${groupJid}:`), err);
-			}
-		}
-
-		// Helper to reject join request
-		async function rejectJoinRequest(groupJid: string, phoneNumbers: string[]) {
-			try {
-				const response = await sock.groupRequestParticipantsUpdate(
-					groupJid,
-					phoneNumbers,
-					'reject'
-				);
-				console.log(chalk.red(`[Auto-Reject] Rejected join request for ${phoneNumbers.join(', ')} in ${groupJid}`));
-				console.log(response);
-			} catch (err) {
-				console.error(chalk.red(`[Auto-Reject] Failed to reject join request for ${phoneNumbers.join(', ')} in ${groupJid}:`), err);
-			}
-		}
-
-		// Periodically check for expired requests
-		setInterval(async () => {
-			const keys = joinRequestCache.keys();
-			const now = Date.now();
-			for (const key of keys) {
-				const req = joinRequestCache.get(key) as JoinRequestInfo | undefined;
-				if (req && !req.accepted) {
-					const requestTimeMs = parseInt(req.request_time) * 1000;
-					if (now - requestTimeMs > 20* 1000) { // 48 hours, Temporarily set to 20 seconds for testing
-						await rejectJoinRequest(req.parent_group_jid, [req.phone_number]);
-						joinRequestCache.del(key);
-					}
-				}
-			}
-		}, 60 * 1000); // check every minute
+		// Only keep messaging functionality for join requests
 
 		while (true) {
 			try {
@@ -222,7 +197,7 @@ async function pollGroupParticipants(
 								request_time: req.request_time,
 								phone_number: req.phone_number,
 								messageSent: true,
-								accepted: false
+								status: "pending"
 							});
 						}
 					}
