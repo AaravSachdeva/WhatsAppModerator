@@ -134,17 +134,104 @@ async function startSock() {
 async function pollGroupParticipants(
 	sock: ReturnType<typeof makeWASocket>,
 	groupId: string
-) {
-	while (true) {
-		try {
-			const response = await sock.groupRequestParticipantsList(groupId);
-			console.log(chalk.yellowBright(`[Poll] groupRequestParticipantsList output:`));
-			console.log(chalk.yellowBright(JSON.stringify(response, null, 2)));
-		} catch (err) {
-			console.error(chalk.red("[Poll] Failed to fetch group participants list:"), err);
+	) {
+		// Track join requests and their status
+		type JoinRequestInfo = {
+			parent_group_jid: string;
+			jid: string;
+			request_method: string;
+			request_time: string;
+			phone_number: string;
+			messageSent: boolean;
+			accepted: boolean;
+		};
+		const joinRequestCache = new NodeCache({ stdTTL: 60 * 60 * 48, checkperiod: 60 }); // 48 hours TTL
+
+		// Helper to approve join request
+		async function approveJoinRequest(groupJid: string, phoneNumbers: string[]) {
+			try {
+				const response = await sock.groupRequestParticipantsUpdate(
+					groupJid,
+					phoneNumbers,
+					'approve'
+				);
+				console.log(chalk.green(`[Approve] Approved join request for ${phoneNumbers.join(', ')} in ${groupJid}`));
+				console.log(response);
+			} catch (err) {
+				console.error(chalk.red(`[Approve] Failed to approve join request for ${phoneNumbers.join(', ')} in ${groupJid}:`), err);
+			}
 		}
-		await new Promise((res) => setTimeout(res, 5000)); // wait 5 seconds
+
+		// Helper to reject join request
+		async function rejectJoinRequest(groupJid: string, phoneNumbers: string[]) {
+			try {
+				const response = await sock.groupRequestParticipantsUpdate(
+					groupJid,
+					phoneNumbers,
+					'reject'
+				);
+				console.log(chalk.red(`[Auto-Reject] Rejected join request for ${phoneNumbers.join(', ')} in ${groupJid}`));
+				console.log(response);
+			} catch (err) {
+				console.error(chalk.red(`[Auto-Reject] Failed to reject join request for ${phoneNumbers.join(', ')} in ${groupJid}:`), err);
+			}
+		}
+
+		// Periodically check for expired requests
+		setInterval(async () => {
+			const keys = joinRequestCache.keys();
+			const now = Date.now();
+			for (const key of keys) {
+				const req = joinRequestCache.get(key) as JoinRequestInfo | undefined;
+				if (req && !req.accepted) {
+					const requestTimeMs = parseInt(req.request_time) * 1000;
+					if (now - requestTimeMs > 20* 1000) { // 48 hours, Temporarily set to 20 seconds for testing
+						await rejectJoinRequest(req.parent_group_jid, [req.phone_number]);
+						joinRequestCache.del(key);
+					}
+				}
+			}
+		}, 60 * 1000); // check every minute
+
+		while (true) {
+			try {
+				const response = await sock.groupRequestParticipantsList(groupId);
+				console.log(chalk.yellowBright(`[Poll] groupRequestParticipantsList output:`));
+				console.log(chalk.yellowBright(JSON.stringify(response, null, 2)));
+
+				if (Array.isArray(response)) {
+					for (const req of response) {
+						// Use request jid as unique key
+						const cacheKey = req.jid;
+						const cached = joinRequestCache.get(cacheKey) as JoinRequestInfo | undefined;
+						if (!cached) {
+							// Send personal message only once
+							try {
+								await sock.sendMessage(req.phone_number, {
+									text: "Hey! I saw your request to join the group. Could you please share a brief introduction about yourself?"
+								});
+								console.log(chalk.green(`[JoinRequest] Sent intro message to ${req.phone_number}`));
+							} catch (err) {
+								console.error(chalk.red(`[JoinRequest] Failed to send intro message to ${req.phone_number}:`), err);
+							}
+							// Store in cache
+							joinRequestCache.set(cacheKey, {
+								parent_group_jid: req.parent_group_jid,
+								jid: req.jid,
+								request_method: req.request_method,
+								request_time: req.request_time,
+								phone_number: req.phone_number,
+								messageSent: true,
+								accepted: false
+							});
+						}
+					}
+				}
+			} catch (err) {
+				console.error(chalk.red("[Poll] Failed to fetch group participants list:"), err);
+			}
+			await new Promise((res) => setTimeout(res, 5000)); // wait 5 seconds
+		}
 	}
-}
 
 startSock();
