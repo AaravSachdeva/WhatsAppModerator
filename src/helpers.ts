@@ -1,6 +1,5 @@
 
 // import lande from 'lande';
-import cld from 'cld'
 import DetectLanguage from 'detectlanguage'
 import dotenv from 'dotenv';
 dotenv.config();
@@ -10,11 +9,11 @@ var detectlanguage = new DetectLanguage(apiKey || "");
 
 export const langDetector = async (lang: string) => {
     try {
-        const language = await cld.detect(lang);
-        return language.languages[0].code
-    } catch (error) {
         const language = await detectlanguage.detect(lang);
         return language[0].language
+    } catch (error) {
+        // REMOVED CLD and implemented detectlanguage only
+        return "en"
     }
 }
 
